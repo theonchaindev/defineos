@@ -1,27 +1,37 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { AppState, SkillLevel, Goal, BaselineAnswers, NodeState, WorkoutSession, WorkoutSet, PersonalBest } from '@/lib/types';
+import type {
+  AppState, SkillLevel, Goal, BaselineAnswers, NodeState,
+  WorkoutSession, WorkoutSet, PersonalBest, User, Run,
+} from '@/lib/types';
 import { computeInitialNodeStates, todayStr } from '@/lib/utils';
 import { SKILL_NODES } from '@/lib/skillData';
 
 const DEFAULT_STATE: AppState = {
-  onboardingComplete: false,
+  user: null,
+  authComplete: false,
   skillLevel: 'beginner',
   goals: [],
   baseline: { pullUps: 0, pushUps: 0, dips: 0, hangTime: 0 },
   nodeStates: {},
   sessions: [],
   personalBests: [],
+  runs: [],
   streak: 0,
   lastWorkoutDate: null,
 };
 
 interface AppContextValue {
   state: AppState;
-  completeOnboarding: (level: SkillLevel, goals: Goal[], baseline: BaselineAnswers) => void;
+  register: (user: User, level: SkillLevel, goals: Goal[], baseline: BaselineAnswers) => void;
+  login: (email: string, password: string) => boolean;
+  logout: () => void;
+  updateProfile: (updates: Partial<User>) => void;
   saveSession: (sets: WorkoutSet[]) => void;
   markNodeMastered: (nodeId: string) => void;
+  saveRun: (run: Run) => void;
+  deleteRun: (runId: string) => void;
   resetApp: () => void;
 }
 
@@ -33,26 +43,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('defineos_state');
-      if (saved) {
-        setState(JSON.parse(saved));
-      }
+      const saved = localStorage.getItem('defineos_state_v2');
+      if (saved) setState(JSON.parse(saved));
     } catch {}
     setLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (loaded) {
-      localStorage.setItem('defineos_state', JSON.stringify(state));
-    }
+    if (loaded) localStorage.setItem('defineos_state_v2', JSON.stringify(state));
   }, [state, loaded]);
 
-  const completeOnboarding = useCallback(
-    (level: SkillLevel, goals: Goal[], baseline: BaselineAnswers) => {
+  const register = useCallback(
+    (user: User, level: SkillLevel, goals: Goal[], baseline: BaselineAnswers) => {
       const nodeStates = computeInitialNodeStates(level, baseline);
       setState((prev) => ({
         ...prev,
-        onboardingComplete: true,
+        user,
+        authComplete: true,
         skillLevel: level,
         goals,
         baseline,
@@ -62,14 +69,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const login = useCallback((email: string, password: string): boolean => {
+    // For localStorage auth, check if current stored user matches
+    const saved = localStorage.getItem('defineos_state_v2');
+    if (!saved) return false;
+    const parsed: AppState = JSON.parse(saved);
+    if (
+      parsed.user &&
+      parsed.user.email.toLowerCase() === email.toLowerCase() &&
+      parsed.user.password === password
+    ) {
+      setState(parsed);
+      return true;
+    }
+    return false;
+  }, []);
+
+  const logout = useCallback(() => {
+    setState((prev) => ({ ...prev, authComplete: false }));
+  }, []);
+
+  const updateProfile = useCallback((updates: Partial<User>) => {
+    setState((prev) => ({
+      ...prev,
+      user: prev.user ? { ...prev.user, ...updates } : prev.user,
+    }));
+  }, []);
+
   const saveSession = useCallback((sets: WorkoutSet[]) => {
     const today = todayStr();
-    const session: WorkoutSession = {
-      id: Date.now().toString(),
-      date: today,
-      sets,
-    };
-
+    const session: WorkoutSession = { id: Date.now().toString(), date: today, sets };
     setState((prev) => {
       const newStreak =
         prev.lastWorkoutDate === today
@@ -79,7 +108,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? prev.streak + 1
           : 1;
 
-      // Update personal bests
       const newPBs = [...prev.personalBests];
       sets.forEach((set) => {
         const existing = newPBs.find((pb) => pb.exerciseId === set.exerciseId);
@@ -114,30 +142,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const markNodeMastered = useCallback((nodeId: string) => {
     setState((prev) => {
       const newNodeStates = { ...prev.nodeStates, [nodeId]: 'mastered' as NodeState };
-      // Unlock children
       SKILL_NODES.forEach((node) => {
         if (
           node.prerequisites.includes(nodeId) &&
-          node.prerequisites.every((p) => newNodeStates[p] === 'mastered')
+          node.prerequisites.every((p) => newNodeStates[p] === 'mastered') &&
+          newNodeStates[node.id] === 'locked'
         ) {
-          if (newNodeStates[node.id] === 'locked') {
-            newNodeStates[node.id] = 'unlocked';
-          }
+          newNodeStates[node.id] = 'unlocked';
         }
       });
       return { ...prev, nodeStates: newNodeStates };
     });
   }, []);
 
+  const saveRun = useCallback((run: Run) => {
+    setState((prev) => ({ ...prev, runs: [run, ...prev.runs] }));
+  }, []);
+
+  const deleteRun = useCallback((runId: string) => {
+    setState((prev) => ({ ...prev, runs: prev.runs.filter((r) => r.id !== runId) }));
+  }, []);
+
   const resetApp = useCallback(() => {
-    localStorage.removeItem('defineos_state');
+    localStorage.removeItem('defineos_state_v2');
     setState(DEFAULT_STATE);
   }, []);
 
   if (!loaded) return null;
 
   return (
-    <AppContext.Provider value={{ state, completeOnboarding, saveSession, markNodeMastered, resetApp }}>
+    <AppContext.Provider
+      value={{ state, register, login, logout, updateProfile, saveSession, markNodeMastered, saveRun, deleteRun, resetApp }}
+    >
       {children}
     </AppContext.Provider>
   );

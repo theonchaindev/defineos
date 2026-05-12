@@ -1,12 +1,12 @@
 'use client';
 
-import { Network, BookOpen, BarChart2, Calendar } from 'lucide-react';
+import { BookOpen, BarChart2, Calendar, Navigation2 } from 'lucide-react';
 
-export type Tab = 'tree' | 'log' | 'stats' | 'program';
+export type Tab = 'log' | 'run' | 'stats' | 'program';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'tree', label: 'Skills', icon: <Network size={20} /> },
   { id: 'log', label: 'Log', icon: <BookOpen size={20} /> },
+  { id: 'run', label: 'Run', icon: <Navigation2 size={20} /> },
   { id: 'stats', label: 'Stats', icon: <BarChart2 size={20} /> },
   { id: 'program', label: 'Today', icon: <Calendar size={20} /> },
 ];

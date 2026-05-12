@@ -1,26 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2, CheckCircle, Flame, ChevronDown } from 'lucide-react';
+import { useState, useRef, ChangeEvent } from 'react';
+import { Plus, Trash2, CheckCircle, Flame, ChevronDown, Camera, X, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { SKILL_NODES, TRACK_CONFIG } from '@/lib/skillData';
 import type { WorkoutSet, Effort, Track } from '@/lib/types';
 
-const EFFORT_LABELS: Record<Effort, string> = {
-  1: 'Easy',
-  2: 'Moderate',
-  3: 'Hard',
-  4: 'Very Hard',
-  5: 'Max',
-};
-
-const EFFORT_COLORS: Record<Effort, string> = {
-  1: '#00ff88',
-  2: '#88ff00',
-  3: '#ffcc00',
-  4: '#ff8800',
-  5: '#ff3333',
-};
+const EFFORT_LABELS: Record<Effort, string> = { 1: 'Easy', 2: 'Moderate', 3: 'Hard', 4: 'Very Hard', 5: 'Max' };
+const EFFORT_COLORS: Record<Effort, string> = { 1: '#00ff88', 2: '#88ff00', 3: '#ffcc00', 4: '#ff8800', 5: '#ff3333' };
 
 interface SetForm {
   exerciseId: string;
@@ -30,6 +17,8 @@ interface SetForm {
   reps: string;
   holdTime: string;
   effort: Effort;
+  caption: string;
+  photo: string | null;
 }
 
 const EMPTY_FORM: SetForm = {
@@ -40,7 +29,52 @@ const EMPTY_FORM: SetForm = {
   reps: '',
   holdTime: '',
   effort: 3,
+  caption: '',
+  photo: null,
 };
+
+function PhotoPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) onChange(ev.target.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  if (value) {
+    return (
+      <div className="relative rounded-xl overflow-hidden">
+        <img src={value} alt="Set photo" className="w-full h-40 object-cover" />
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center"
+        >
+          <X size={14} className="text-white" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="w-full py-3 rounded-xl border border-dashed border-white/15 text-gray-500 flex items-center justify-center gap-2 text-sm hover:border-[#00ff88]/30 hover:text-[#00ff88] transition-all"
+      >
+        <Camera size={16} />
+        Add photo
+      </button>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+    </>
+  );
+}
 
 export default function WorkoutLogger() {
   const { state, saveSession } = useApp();
@@ -48,6 +82,7 @@ export default function WorkoutLogger() {
   const [form, setForm] = useState<SetForm>(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [expandedSet, setExpandedSet] = useState<string | null>(null);
 
   const unlockedNodes = SKILL_NODES.filter(
     (n) => state.nodeStates[n.id] === 'unlocked' || state.nodeStates[n.id] === 'mastered'
@@ -65,9 +100,11 @@ export default function WorkoutLogger() {
       reps: form.isIsometric ? undefined : parseInt(form.reps) || undefined,
       holdTime: form.isIsometric ? parseInt(form.holdTime) || undefined : undefined,
       effort: form.effort,
+      caption: form.caption.trim() || undefined,
+      photo: form.photo || undefined,
     };
     setSets((prev) => [...prev, set]);
-    setForm((f) => ({ ...f, reps: '', holdTime: '' }));
+    setForm((f) => ({ ...f, reps: '', holdTime: '', caption: '', photo: null }));
     setShowForm(false);
   };
 
@@ -84,13 +121,7 @@ export default function WorkoutLogger() {
   const selectExercise = (id: string) => {
     const node = SKILL_NODES.find((n) => n.id === id);
     if (node) {
-      setForm((f) => ({
-        ...f,
-        exerciseId: id,
-        exerciseName: node.name,
-        track: node.track,
-        isIsometric: node.isIsometric,
-      }));
+      setForm((f) => ({ ...f, exerciseId: id, exerciseName: node.name, track: node.track, isIsometric: node.isIsometric }));
     }
   };
 
@@ -99,9 +130,7 @@ export default function WorkoutLogger() {
       <div className="min-h-screen bg-[#0d0d0d] flex flex-col items-center justify-center px-6 pb-24">
         <CheckCircle size={56} className="text-[#00ff88] mb-4" />
         <h2 className="text-2xl font-black text-white mb-2">Session Saved!</h2>
-        <p className="text-gray-400 text-center">
-          {sets.length} sets logged. Keep showing up.
-        </p>
+        <p className="text-gray-400 text-center">Keep showing up.</p>
         <div className="mt-4 flex items-center gap-2 text-[#00ff88]">
           <Flame size={18} />
           <span className="font-bold">{state.streak} day streak</span>
@@ -136,18 +165,16 @@ export default function WorkoutLogger() {
       {/* Volume summary */}
       {sets.length > 0 && (
         <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="bg-white/5 rounded-xl p-3 text-center">
-            <div className="text-xl font-black text-white">{sets.length}</div>
-            <div className="text-xs text-gray-500">Sets</div>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 text-center">
-            <div className="text-xl font-black text-white">{totalVolume}</div>
-            <div className="text-xs text-gray-500">Total Reps</div>
-          </div>
-          <div className="bg-white/5 rounded-xl p-3 text-center">
-            <div className="text-xl font-black text-white">{totalHold}s</div>
-            <div className="text-xs text-gray-500">Hold Time</div>
-          </div>
+          {[
+            { val: sets.length, label: 'Sets' },
+            { val: totalVolume, label: 'Total Reps' },
+            { val: `${totalHold}s`, label: 'Hold Time' },
+          ].map(({ val, label }) => (
+            <div key={label} className="bg-white/5 rounded-xl p-3 text-center">
+              <div className="text-xl font-black text-white">{val}</div>
+              <div className="text-xs text-gray-500">{label}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -155,23 +182,65 @@ export default function WorkoutLogger() {
       <div className="space-y-2 mb-4">
         {sets.map((set, i) => {
           const cfg = TRACK_CONFIG[SKILL_NODES.find((n) => n.id === set.exerciseId)?.track ?? 'push'];
+          const isExpanded = expandedSet === set.id;
+          const hasExtra = set.caption || set.photo;
+
           return (
-            <div key={set.id} className="bg-white/5 rounded-xl p-3 flex items-center gap-3 border border-white/8">
-              <div
-                className="w-1 h-10 rounded-full"
-                style={{ background: cfg.color }}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-white font-semibold text-sm truncate">{set.exerciseName}</div>
-                <div className="text-xs text-gray-500">
-                  {set.reps ? `${set.reps} reps` : `${set.holdTime}s hold`} ·{' '}
-                  <span style={{ color: EFFORT_COLORS[set.effort] }}>{EFFORT_LABELS[set.effort]}</span>
+            <div key={set.id} className="bg-white/5 rounded-xl border border-white/8 overflow-hidden">
+              <div className="flex items-center gap-3 p-3">
+                <div className="w-1 h-10 rounded-full flex-shrink-0" style={{ background: cfg.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-white font-semibold text-sm truncate">{set.exerciseName}</div>
+                  <div className="text-xs text-gray-500">
+                    {set.reps ? `${set.reps} reps` : `${set.holdTime}s hold`} ·{' '}
+                    <span style={{ color: EFFORT_COLORS[set.effort] }}>{EFFORT_LABELS[set.effort]}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {hasExtra && (
+                    <button
+                      onClick={() => setExpandedSet(isExpanded ? null : set.id)}
+                      className="text-gray-600 hover:text-gray-400"
+                    >
+                      {set.photo && <ImageIcon size={14} />}
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-700">#{i + 1}</span>
+                  <button onClick={() => removeSet(set.id)} className="text-gray-600 hover:text-red-400 transition-colors">
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
-              <span className="text-xs text-gray-600">#{i + 1}</span>
-              <button onClick={() => removeSet(set.id)} className="text-gray-600 hover:text-red-400 transition-colors">
-                <Trash2 size={15} />
-              </button>
+
+              {/* Expanded: photo + caption */}
+              {isExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {set.photo && (
+                    <img src={set.photo} alt="Set" className="w-full rounded-lg object-cover max-h-48" />
+                  )}
+                  {set.caption && (
+                    <p className="text-sm text-gray-300 italic">"{set.caption}"</p>
+                  )}
+                </div>
+              )}
+
+              {/* Collapsed preview of caption */}
+              {!isExpanded && set.caption && (
+                <button
+                  onClick={() => setExpandedSet(set.id)}
+                  className="px-3 pb-2 text-xs text-gray-600 italic truncate w-full text-left hover:text-gray-400"
+                >
+                  "{set.caption}"
+                </button>
+              )}
+
+              {/* Toggle expand if has photo or caption */}
+              {hasExtra && !isExpanded && set.photo && (
+                <button
+                  onClick={() => setExpandedSet(set.id)}
+                  className="w-full h-1 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+                />
+              )}
             </div>
           );
         })}
@@ -197,9 +266,7 @@ export default function WorkoutLogger() {
                     {unlockedNodes
                       .filter((n) => n.track === track)
                       .map((n) => (
-                        <option key={n.id} value={n.id}>
-                          {n.name}
-                        </option>
+                        <option key={n.id} value={n.id}>{n.name}</option>
                       ))}
                   </optgroup>
                 ))}
@@ -211,36 +278,26 @@ export default function WorkoutLogger() {
           {/* Reps or hold */}
           {form.exerciseId && (
             <div className="mb-4">
-              {form.isIsometric ? (
-                <>
-                  <label className="text-xs text-gray-500 mb-1.5 block">HOLD TIME (seconds)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={form.holdTime}
-                    onChange={(e) => setForm((f) => ({ ...f, holdTime: e.target.value }))}
-                    placeholder="e.g. 10"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00ff88] transition-colors"
-                  />
-                </>
-              ) : (
-                <>
-                  <label className="text-xs text-gray-500 mb-1.5 block">REPS</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={form.reps}
-                    onChange={(e) => setForm((f) => ({ ...f, reps: e.target.value }))}
-                    placeholder="e.g. 10"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00ff88] transition-colors"
-                  />
-                </>
-              )}
+              <label className="text-xs text-gray-500 mb-1.5 block">
+                {form.isIsometric ? 'HOLD TIME (seconds)' : 'REPS'}
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={form.isIsometric ? form.holdTime : form.reps}
+                onChange={(e) =>
+                  setForm((f) =>
+                    form.isIsometric ? { ...f, holdTime: e.target.value } : { ...f, reps: e.target.value }
+                  )
+                }
+                placeholder={form.isIsometric ? 'e.g. 10' : 'e.g. 10'}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00ff88] transition-colors"
+              />
             </div>
           )}
 
           {/* Effort */}
-          <div className="mb-5">
+          <div className="mb-4">
             <label className="text-xs text-gray-500 mb-2 block">EFFORT</label>
             <div className="flex gap-2">
               {([1, 2, 3, 4, 5] as Effort[]).map((e) => (
@@ -261,6 +318,24 @@ export default function WorkoutLogger() {
             <div className="text-center text-xs mt-1" style={{ color: EFFORT_COLORS[form.effort] }}>
               {EFFORT_LABELS[form.effort]}
             </div>
+          </div>
+
+          {/* Caption */}
+          <div className="mb-4">
+            <label className="text-xs text-gray-500 mb-1.5 block">CAPTION <span className="text-gray-700">(optional)</span></label>
+            <input
+              type="text"
+              value={form.caption}
+              onChange={(e) => setForm((f) => ({ ...f, caption: e.target.value }))}
+              placeholder="How did this set feel?"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00ff88] transition-colors text-sm"
+            />
+          </div>
+
+          {/* Photo */}
+          <div className="mb-5">
+            <label className="text-xs text-gray-500 mb-1.5 block">PHOTO <span className="text-gray-700">(optional)</span></label>
+            <PhotoPicker value={form.photo} onChange={(v) => setForm((f) => ({ ...f, photo: v }))} />
           </div>
 
           <div className="flex gap-3">
@@ -290,9 +365,7 @@ export default function WorkoutLogger() {
       )}
 
       {sets.length === 0 && !showForm && (
-        <p className="text-center text-gray-600 text-sm mt-8">
-          No sets logged yet.<br />Add your first set above.
-        </p>
+        <p className="text-center text-gray-600 text-sm mt-8">No sets logged yet.</p>
       )}
     </div>
   );
